@@ -5,9 +5,23 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <math.h>
+#include <stack>
 using namespace std;
 
 int dim_index = 0;
+
+class Node {
+public:
+  Node* left;
+  Node* right;
+  int index;
+  int dimension;
+  Node (int index ,int dimension) {
+    this->index = index;
+    this->dimension = dimension;
+  }
+};
+
 
 void printData(const vector<vector<double> >& data) {
   cout << endl;
@@ -30,36 +44,17 @@ void localSort(vector<vector<double> >& v, int begin, int end, int dimension) {
   sort(v.begin()+begin, v.begin()+end+1, compareFunc);
 }
 
-void buildTreeHelper(vector<vector<double> >& data, int begin, int end, int dimension) {
+void prepareTreeHelper(vector<vector<double> >& data, int begin, int end, int dimension) {
   if (begin >= end) return;
   localSort(data, begin, end, dimension);
   int mid = (begin+end)/2;
-  buildTreeHelper(data, begin, mid-1, dimension+1);
-  buildTreeHelper(data, mid+1, end, dimension+1);
+  prepareTreeHelper(data, begin, mid-1, dimension+1);
+  prepareTreeHelper(data, mid+1, end, dimension+1);
   return;
 }
 
-void buildTree(vector<vector<double> >& data) {
-  buildTreeHelper(data, 0, data.size()-1, 0);
-  return;
-}
-
-void printHelper(const vector<vector<double> >& data, int begin, int end, int dimension) {
-  if (begin > end) return;
-  if (begin == end) {
-    for (int i = 0; i < dimension; ++i) {
-      cout << "       ";
-    }
-    cout << data[begin][dimension%data[0].size()] << endl;
-    return;
-  }
-  int mid = (begin+end)/2;
-  printHelper(data, begin, mid-1, dimension+1);
-  for (int i = 0; i < dimension; ++i) {
-    cout << "       ";
-  }
-  cout << data[mid][dimension%data[0].size()] << endl;
-  printHelper(data, mid+1, end, dimension+1);
+void prepareTree(vector<vector<double> >& data) {
+  prepareTreeHelper(data, 0, data.size()-1, 0);
   return;
 }
 
@@ -72,47 +67,69 @@ double euclideanMetric(const vector<double>& first, const vector<double>& second
   return sqrt(distance);
 }
 
-void traceBack(const vector<vector<double> >& tree, ) {
-
-}
-
-void query(const vector<vector<double> >& tree,
-            int begin,
-            int end,
-            int dimension,
-            const vector<double>& q,
-            vector<double>& knn
-            // int parent,
-            // bool left
-          ) {
-  if (begin > end) return;
-  if (begin == end) {
-    double divideLine = tree[begin][dimension%tree[0].size()];
-    cout << " " << divideLine << endl;
-    knn.clear();
-    knn.shrink_to_fit();
-    double r = euclideanMetric(tree[begin], q);
-    knn.push_back(r);
-    // traceBack();
-    return;
+void query(const vector<vector<double> >& data, Node* current, const vector<double>& p, vector<pair<double, Node*> >& knn) {
+  if (current == NULL) return;
+  double r = knn.back().first;
+  double d = euclideanMetric(p, data[current->index]);
+  if (d < r) {
+    knn.back().first = d;
+    knn.back().second = current;
+    sort(knn.begin(), knn.end());
   }
-  int mid = (begin+end)/2;
-  double divideLine = tree[mid][dimension%tree[0].size()];
-  cout << " " << divideLine << endl;
-  if (q[dimension%tree[0].size()] <= divideLine) {
-    query(tree, begin, mid-1, dimension+1, q, knn);
+  r = knn.back().first;
+  double cuttingLine = data[current->index][current->dimension];
+  bool first_check_left = false;
+  if (p[current->dimension] <= cuttingLine) {
+    // on the left
+    query(data, current->left, p, knn);
+    first_check_left = true;
   } else {
-    query(tree, mid+1, end, dimension+1, q, knn);
+    query(data, current->right, p, knn);
+  }
+
+  double d_cross_dim = abs(cuttingLine-p[current->dimension]);
+  if (first_check_left) {
+    if (d_cross_dim < knn.back().first) {
+      query(data, current->right, p, knn);
+    }
+  } else {
+    if (d_cross_dim < knn.back().first) {
+      query(data, current->left, p, knn);
+    }
   }
   return;
 }
 
 
-void printTree(const vector<vector<double> >& data) {
-  printHelper(data, 0, data.size()-1,0);
+
+Node* buildTreeHelper(const vector<vector<double> >& data,int begin, int end, int dimension) {
+  if (begin > end) return NULL;
+  if (begin == end) {
+    return new Node(begin, dimension);
+  }
+  int mid = (begin+end)/2;
+  Node* cur = new Node(mid, dimension);
+  cur->left = buildTreeHelper(data, begin, mid-1, dimension+1);
+  cur->right = buildTreeHelper(data, mid+1, end, dimension+1);
+  return cur;
 }
 
+Node* buildTree(vector<vector<double> >& data) {
+  prepareTree(data);
+  Node* root = buildTreeHelper(data, 0, data.size()-1,0);
+  return root;
+}
 
+void printTree(const vector<vector<double> >& data, Node* root) {
+  if (root == NULL) return;
+  printTree(data, root->left);
+  for (int i = 0; i < root->dimension; ++i) {
+    cout << "      ";
+  }
+  cout << data[root->index][root->dimension%data[root->index].size()] << endl;
+  printTree(data, root->right);
+  return;
+}
 
 vector<vector<double> > randomData(int size_of_data, int dimension) {
   vector<vector<double> > v(size_of_data, vector<double>(dimension, 1));
@@ -124,25 +141,11 @@ vector<vector<double> > randomData(int size_of_data, int dimension) {
   return v;
 }
 
-int main(int argc, char const *argv[]) {
-  srand(time(NULL));
-  vector<vector<double> > data = randomData(10, 2);
-  printData(data);
-  buildTree(data);
-  printData(data);
-  vector<double> p = {5, 11};
-  vector<double> knn;
-  query(data, 0, data.size()-1, 0, p, knn);
-  printTree(data);
-  return 0;
-}
-
-// void query(const vector<vector<double> >& tree,
-//             int begin,
-//             int end,
-//             int dimension,
-//             const vector<double>& q,
-//             vector<double>& knn
-//             // int parent,
-//             // bool left
-//           ) {
+// int main(int argc, char const *argv[]) {
+//   srand(time(NULL));
+//   vector<vector<double> > data = randomData(20, 5);
+//   Node* root = buildTree(data);
+//   printData(data);
+//   printTree(data, root);
+//   return 0;
+// }
